@@ -1,0 +1,6 @@
+# Core
+fastapi
+uvicorn[standard]
+
+# Configuration
+pydantic-settings
