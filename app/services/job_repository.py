@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ExecutionAttemptDB, JobDB, LeaseDB
@@ -145,4 +145,53 @@ class PostgresJobRepository:
                 created_at=job_db.created_at,
                 updated_at=job_db.updated_at,
                 version=job_db.version,
+            )
+
+    async def complete_job(
+        self,
+        job_id: UUID,
+        succeeded: bool,
+        result: dict | None = None,
+        error: str | None = None,
+    ) -> None:
+
+        async with self.session.begin():
+            job_db = await self.session.get(JobDB, job_id)
+
+            if job_db is None:
+                return
+
+            attempt_result = await self.session.execute(
+                select(ExecutionAttemptDB)
+                .where(ExecutionAttemptDB.job_id == job_id)
+                .order_by(ExecutionAttemptDB.attempt_number.desc())
+                .limit(1)
+            )
+
+            attempt_db = attempt_result.scalar_one_or_none()
+
+            if attempt_db is None:
+                return
+
+            if succeeded:
+                job_db.status = "succeeded"
+                attempt_db.status = "succeeded"
+                attempt_db.result = result
+                attempt_db.error = None
+            else:
+                job_db.status = "failed"
+                attempt_db.status = "failed"
+                attempt_db.error = error
+                attempt_db.result = None
+
+            attempt_db.finished_at = __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            )
+
+            job_db.version += 1
+
+            await self.session.execute(
+                delete(LeaseDB).where(
+                    LeaseDB.attempt_id == attempt_db.id
+                )
             )

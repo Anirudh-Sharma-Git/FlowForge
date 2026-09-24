@@ -23,6 +23,13 @@ class WorkerRunner:
 
         try:
             result = await self.executor.execute(job)
+
+            await self.job_repository.complete_job(
+                job_id=job.id,
+                succeeded=True,
+                result=result,
+            )
+
             return {
                 "job_id": str(job.id),
                 "status": "succeeded",
@@ -30,6 +37,13 @@ class WorkerRunner:
             }
 
         except Exception as exc:
+
+            await self.job_repository.complete_job(
+                job_id=job.id,
+                succeeded=False,
+                error=str(exc),
+            )
+
             return {
                 "job_id": str(job.id),
                 "status": "failed",
