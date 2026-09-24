@@ -3,10 +3,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import JobDB
-from app.models.job import Job
-from app.db.models import ExecutionAttemptDB
+from app.db.models import ExecutionAttemptDB, JobDB, LeaseDB
 from app.models.execution_attempt import ExecutionAttempt
+from app.models.job import Job
+from app.models.lease import Lease
 
 
 class PostgresJobRepository:
@@ -74,7 +74,11 @@ class PostgresJobRepository:
             for row in rows
         ]
 
-    async def claim_next_job(self) -> Job | None:
+    async def claim_next_job(
+        self,
+        worker_id: str,
+    ) -> Job | None:
+
         async with self.session.begin():
             result = await self.session.execute(
                 select(JobDB)
@@ -92,11 +96,9 @@ class PostgresJobRepository:
             job_db.status = "running"
             job_db.version += 1
 
-            attempt_number = 1
-
             attempt = ExecutionAttempt(
                 job_id=job_db.id,
-                attempt_number=attempt_number,
+                attempt_number=1,
             )
 
             attempt_db = ExecutionAttemptDB(
@@ -108,6 +110,27 @@ class PostgresJobRepository:
 
             self.session.add(attempt_db)
 
+            lease = Lease(
+                job_id=job_db.id,
+                attempt_id=attempt.id,
+                worker_id=worker_id,
+            )
+
+            lease.acquire()
+
+            lease_db = LeaseDB(
+                id=lease.id,
+                job_id=lease.job_id,
+                attempt_id=lease.attempt_id,
+                worker_id=lease.worker_id,
+                acquired_at=lease.acquired_at,
+                expires_at=lease.expires_at,
+                last_heartbeat_at=lease.last_heartbeat_at,
+                duration_seconds=lease.duration_seconds,
+            )
+
+            self.session.add(lease_db)
+
             return Job(
                 id=job_db.id,
                 type=job_db.type,
@@ -118,4 +141,4 @@ class PostgresJobRepository:
                 created_at=job_db.created_at,
                 updated_at=job_db.updated_at,
                 version=job_db.version,
-            )   
+            )
