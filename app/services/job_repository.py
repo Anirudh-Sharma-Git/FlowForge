@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import JobDB
 from app.models.job import Job
+from app.db.models import ExecutionAttemptDB
+from app.models.execution_attempt import ExecutionAttempt
 
 
 class PostgresJobRepository:
@@ -101,3 +103,26 @@ class PostgresJobRepository:
                 updated_at=job_db.updated_at,
                 version=job_db.version,
             )
+
+        async def create_attempt(
+        self,
+        job_id: UUID,
+        attempt_number: int,
+    ) -> ExecutionAttempt:
+
+            attempt = ExecutionAttempt(
+                job_id=job_id,
+                attempt_number=attempt_number,
+            )
+
+            attempt_db = ExecutionAttemptDB(
+                id=attempt.id,
+                job_id=attempt.job_id,
+                attempt_number=attempt.attempt_number,
+                status=attempt.status.value,
+            )
+
+            self.session.add(attempt_db)
+            await self.session.commit()
+
+            return attempt   
