@@ -60,6 +60,7 @@ class JobDB(Base):
         nullable=False,
     )
 
+
 class ExecutionAttemptDB(Base):
     __tablename__ = "execution_attempts"
 
@@ -107,4 +108,50 @@ class ExecutionAttemptDB(Base):
     result: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,
+    )
+
+
+class LeaseDB(Base):
+    __tablename__ = "leases"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+
+    attempt_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+
+    worker_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    duration_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=30,
     )

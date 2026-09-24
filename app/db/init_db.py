@@ -1,9 +1,7 @@
 from app.db.base import Base
-from app.db.models import JobDB
+from app.db.models import JobDB, ExecutionAttemptDB, LeaseDB
 from app.db.session import engine
-from app.db.base import Base
-from app.db.models import JobDB, ExecutionAttemptDB
-from app.db.session import engine
+
 
 async def init_db() -> None:
     async with engine.begin() as connection:
