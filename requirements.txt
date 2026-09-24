@@ -7,3 +7,5 @@ pydantic-settings
 
 SQLAlchemy
 asyncpg
+
+pytest-asyncio

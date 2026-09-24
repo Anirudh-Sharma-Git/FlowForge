@@ -101,11 +101,15 @@ class PostgresJobRepository:
                 attempt_number=1,
             )
 
+            attempt.start(worker_id)
+
             attempt_db = ExecutionAttemptDB(
                 id=attempt.id,
                 job_id=attempt.job_id,
                 attempt_number=attempt.attempt_number,
                 status=attempt.status.value,
+                worker_id=attempt.worker_id,
+                started_at=attempt.started_at,
             )
 
             self.session.add(attempt_db)
