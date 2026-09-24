@@ -60,6 +60,11 @@ class JobDB(Base):
         nullable=False,
     )
 
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
 
 class ExecutionAttemptDB(Base):
     __tablename__ = "execution_attempts"
@@ -189,4 +194,44 @@ class WorkerDB(Base):
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+
+class DeadLetterJobDB(Base):
+    __tablename__ = "dead_letter_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+
+    job_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    payload: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+
+    error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    failed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
     )

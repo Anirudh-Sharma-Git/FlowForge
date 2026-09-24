@@ -1,18 +1,26 @@
-from uuid import UUID
+from datetime import datetime, timezone, timedelta
+from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ExecutionAttemptDB, JobDB, LeaseDB
+from app.db.models import (
+    DeadLetterJobDB,
+    ExecutionAttemptDB,
+    JobDB,
+    LeaseDB,
+)
 from app.models.execution_attempt import ExecutionAttempt
 from app.models.job import Job
 from app.models.lease import Lease
+from app.services.retry_policy import RetryPolicy
 
 
 class PostgresJobRepository:
 
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.retry_policy = RetryPolicy()
 
     async def save(self, job: Job) -> Job:
         job_db = JobDB(
@@ -25,6 +33,7 @@ class PostgresJobRepository:
             version=job.version,
             created_at=job.created_at,
             updated_at=job.updated_at,
+            next_attempt_at=job.next_attempt_at,
         )
 
         self.session.add(job_db)
@@ -47,6 +56,7 @@ class PostgresJobRepository:
             max_attempts=job_db.max_attempts,
             created_at=job_db.created_at,
             updated_at=job_db.updated_at,
+            next_attempt_at=job_db.next_attempt_at,
             version=job_db.version,
         )
 
@@ -69,6 +79,7 @@ class PostgresJobRepository:
                 max_attempts=row.max_attempts,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
+                next_attempt_at=row.next_attempt_at,
                 version=row.version,
             )
             for row in rows
@@ -80,9 +91,16 @@ class PostgresJobRepository:
     ) -> Job | None:
 
         async with self.session.begin():
+
+            now = datetime.now(timezone.utc)
+
             result = await self.session.execute(
                 select(JobDB)
                 .where(JobDB.status == "queued")
+                .where(
+                    (JobDB.next_attempt_at.is_(None))
+                    | (JobDB.next_attempt_at <= now)
+                )
                 .order_by(JobDB.priority.desc())
                 .with_for_update(skip_locked=True)
                 .limit(1)
@@ -93,12 +111,24 @@ class PostgresJobRepository:
             if job_db is None:
                 return None
 
+            attempt_count_result = await self.session.execute(
+                select(func.count(ExecutionAttemptDB.id))
+                .where(
+                    ExecutionAttemptDB.job_id == job_db.id
+                )
+            )
+
+            attempt_number = (
+                attempt_count_result.scalar_one() + 1
+            )
+
             job_db.status = "running"
             job_db.version += 1
+            job_db.next_attempt_at = None
 
             attempt = ExecutionAttempt(
                 job_id=job_db.id,
-                attempt_number=1,
+                attempt_number=attempt_number,
             )
 
             attempt.start(worker_id)
@@ -144,6 +174,7 @@ class PostgresJobRepository:
                 max_attempts=job_db.max_attempts,
                 created_at=job_db.created_at,
                 updated_at=job_db.updated_at,
+                next_attempt_at=job_db.next_attempt_at,
                 version=job_db.version,
             )
 
@@ -156,15 +187,23 @@ class PostgresJobRepository:
     ) -> None:
 
         async with self.session.begin():
-            job_db = await self.session.get(JobDB, job_id)
+
+            job_db = await self.session.get(
+                JobDB,
+                job_id,
+            )
 
             if job_db is None:
                 return
 
             attempt_result = await self.session.execute(
                 select(ExecutionAttemptDB)
-                .where(ExecutionAttemptDB.job_id == job_id)
-                .order_by(ExecutionAttemptDB.attempt_number.desc())
+                .where(
+                    ExecutionAttemptDB.job_id == job_id
+                )
+                .order_by(
+                    ExecutionAttemptDB.attempt_number.desc()
+                )
                 .limit(1)
             )
 
@@ -173,20 +212,54 @@ class PostgresJobRepository:
             if attempt_db is None:
                 return
 
+            now = datetime.now(timezone.utc)
+
             if succeeded:
+
                 job_db.status = "succeeded"
+
                 attempt_db.status = "succeeded"
                 attempt_db.result = result
                 attempt_db.error = None
+                attempt_db.finished_at = now
+
+                job_db.next_attempt_at = None
+
             else:
-                job_db.status = "failed"
+
                 attempt_db.status = "failed"
                 attempt_db.error = error
                 attempt_db.result = None
+                attempt_db.finished_at = now
 
-            attempt_db.finished_at = __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            )
+                if attempt_db.attempt_number < job_db.max_attempts:
+
+                    delay = self.retry_policy.get_delay(
+                        attempt_db.attempt_number
+                    )
+
+                    job_db.status = "queued"
+
+                    job_db.next_attempt_at = (
+                        now + timedelta(seconds=delay)
+                    )
+
+                else:
+
+                    job_db.status = "failed"
+                    job_db.next_attempt_at = None
+
+                    dlq_entry = DeadLetterJobDB(
+                        id=uuid4(),
+                        job_id=job_db.id,
+                        job_type=job_db.type,
+                        payload=job_db.payload,
+                        error=error,
+                        attempts=attempt_db.attempt_number,
+                        failed_at=now,
+                    )
+
+                    self.session.add(dlq_entry)
 
             job_db.version += 1
 

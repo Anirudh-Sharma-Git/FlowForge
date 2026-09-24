@@ -18,7 +18,8 @@ class InvalidJobTransition(Exception):
 
 
 class JobStateMachine:
-    _TRANSITIONS = {
+
+    TRANSITIONS = {
         JobStatus.PENDING: {
             JobStatus.QUEUED,
             JobStatus.CANCELLED,
@@ -45,7 +46,7 @@ class JobStateMachine:
         current: JobStatus,
         target: JobStatus,
     ) -> bool:
-        return target in cls._TRANSITIONS[current]
+        return target in cls.TRANSITIONS[current]
 
     @classmethod
     def transition(
@@ -53,10 +54,11 @@ class JobStateMachine:
         current: JobStatus,
         target: JobStatus,
     ) -> JobStatus:
+
         if not cls.can_transition(current, target):
             raise InvalidJobTransition(
-                f"Invalid job transition: "
-                f"{current.value} -> {target.value}"
+                f"Cannot transition job from "
+                f"{current.value} to {target.value}"
             )
 
         return target
@@ -75,11 +77,14 @@ class Job:
     created_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
+
     updated_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
-    version: int = 1    # Every state change will increment this version
+    next_attempt_at: datetime | None = None
+
+    version: int = 1
 
     def transition_to(self, target: JobStatus) -> None:
         self.status = JobStateMachine.transition(
