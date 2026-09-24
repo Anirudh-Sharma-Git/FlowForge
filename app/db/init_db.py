@@ -1,5 +1,10 @@
 from app.db.base import Base
-from app.db.models import JobDB, ExecutionAttemptDB, LeaseDB
+from app.db.models import (
+    ExecutionAttemptDB,
+    JobDB,
+    LeaseDB,
+    WorkerDB,
+)
 from app.db.session import engine
 
 

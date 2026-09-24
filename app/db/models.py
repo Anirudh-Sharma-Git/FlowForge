@@ -155,3 +155,38 @@ class LeaseDB(Base):
         nullable=False,
         default=30,
     )
+
+
+class WorkerDB(Base):
+    __tablename__ = "workers"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    hostname: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    capacity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
