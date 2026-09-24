@@ -92,26 +92,10 @@ class PostgresJobRepository:
             job_db.status = "running"
             job_db.version += 1
 
-            return Job(
-                id=job_db.id,
-                type=job_db.type,
-                payload=job_db.payload,
-                status=job_db.status,
-                priority=job_db.priority,
-                max_attempts=job_db.max_attempts,
-                created_at=job_db.created_at,
-                updated_at=job_db.updated_at,
-                version=job_db.version,
-            )
-
-        async def create_attempt(
-        self,
-        job_id: UUID,
-        attempt_number: int,
-    ) -> ExecutionAttempt:
+            attempt_number = 1
 
             attempt = ExecutionAttempt(
-                job_id=job_id,
+                job_id=job_db.id,
                 attempt_number=attempt_number,
             )
 
@@ -123,6 +107,15 @@ class PostgresJobRepository:
             )
 
             self.session.add(attempt_db)
-            await self.session.commit()
 
-            return attempt   
+            return Job(
+                id=job_db.id,
+                type=job_db.type,
+                payload=job_db.payload,
+                status=job_db.status,
+                priority=job_db.priority,
+                max_attempts=job_db.max_attempts,
+                created_at=job_db.created_at,
+                updated_at=job_db.updated_at,
+                version=job_db.version,
+            )   
