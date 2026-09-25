@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: str
+    REDIS_URL: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
