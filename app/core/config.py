@@ -8,6 +8,8 @@ class Settings(BaseSettings):
 
     database_url: str
     REDIS_URL: str
+    KAFKA_BOOTSTRAP_SERVERS: str
+    KAFKA_JOB_EVENTS_TOPIC: str = "job-events"
 
     model_config = SettingsConfigDict(
         env_file=".env",

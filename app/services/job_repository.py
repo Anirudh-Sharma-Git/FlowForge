@@ -9,6 +9,7 @@ from app.db.models import (
     ExecutionAttemptDB,
     JobDB,
     LeaseDB,
+    OutboxEventDB,
 )
 from app.models.execution_attempt import ExecutionAttempt
 from app.models.job import Job
@@ -191,6 +192,7 @@ class PostgresJobRepository:
             job_db = await self.session.get(
                 JobDB,
                 job_id,
+                with_for_update=True,
             )
 
             if job_db is None:
@@ -225,6 +227,23 @@ class PostgresJobRepository:
 
                 job_db.next_attempt_at = None
 
+                event = OutboxEventDB(
+                    id=uuid4(),
+                    event_type="job.succeeded",
+                    aggregate_id=job_db.id,
+                    topic="job-events",
+                    payload={
+                        "job_id": str(job_db.id),
+                        "job_type": job_db.type,
+                        "status": "succeeded",
+                        "result": result,
+                        "attempt_number": attempt_db.attempt_number,
+                    },
+                    created_at=now,
+                )
+
+                self.session.add(event)
+
             else:
 
                 attempt_db.status = "failed"
@@ -244,6 +263,26 @@ class PostgresJobRepository:
                         now + timedelta(seconds=delay)
                     )
 
+                    event = OutboxEventDB(
+                        id=uuid4(),
+                        event_type="job.retry_scheduled",
+                        aggregate_id=job_db.id,
+                        topic="job-events",
+                        payload={
+                            "job_id": str(job_db.id),
+                            "job_type": job_db.type,
+                            "status": "queued",
+                            "error": error,
+                            "attempt_number": attempt_db.attempt_number,
+                            "next_attempt_at": (
+                                job_db.next_attempt_at.isoformat()
+                            ),
+                        },
+                        created_at=now,
+                    )
+
+                    self.session.add(event)
+
                 else:
 
                     job_db.status = "failed"
@@ -261,7 +300,26 @@ class PostgresJobRepository:
 
                     self.session.add(dlq_entry)
 
+                    event = OutboxEventDB(
+                        id=uuid4(),
+                        event_type="job.failed",
+                        aggregate_id=job_db.id,
+                        topic="job-events",
+                        payload={
+                            "job_id": str(job_db.id),
+                            "job_type": job_db.type,
+                            "status": "failed",
+                            "error": error,
+                            "attempt_number": attempt_db.attempt_number,
+                            "dead_letter": True,
+                        },
+                        created_at=now,
+                    )
+
+                    self.session.add(event)
+
             job_db.version += 1
+            job_db.updated_at = now
 
             await self.session.execute(
                 delete(LeaseDB).where(
